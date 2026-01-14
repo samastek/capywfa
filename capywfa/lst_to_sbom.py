@@ -171,6 +171,8 @@ def main():
 
     bom = lst_to_sbom(format=args.format, package_list=args.package_list)
 
+    if os.path.exists(args.output_file):
+        os.remove(args.output_file)
     JsonV1Dot6(bom=bom).output_to_file(args.output_file, indent=2)
     print(f"SBOM written to {args.output_file}")
 
