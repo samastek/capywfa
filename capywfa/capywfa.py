@@ -7,6 +7,7 @@
 # SPDX-License-Identifier: MIT
 
 import argparse
+import glob
 import textwrap
 import sys
 import os
@@ -107,11 +108,30 @@ def pass1_map_bom(bom, sw360_url, sw360_token):
     return result
 
 
-def pass3_download_sources(bom):
+def pass3_download_sources(bom, pkg_dir):
     for item in bom.components:
-        if not (get_cdx(item, "MapResult") == MapResult.NO_MATCH
-                or (MapBom.is_good_match(get_cdx(item, "MapResult"))
-                    and get_cdx(item, "Sw360SourceFileCheck") != "passed")):
+        map_result = get_cdx(item, "MapResult")
+        is_missing_from_sw360 = map_result == MapResult.NO_MATCH
+        is_in_sw360_but_unverified = (
+            MapBom.is_good_match(map_result)
+            and get_cdx(item, "Sw360SourceFileCheck") != "passed"
+        )
+        needs_download = is_missing_from_sw360 or is_in_sw360_but_unverified
+
+        if needs_download and pkg_dir:
+            package_name = item.purl.name
+            version = item.version.removesuffix(".debian")
+            version = version.split(":", 1)[-1]  # Remove epoch if present
+            pattern = f"{package_name}_{version}*"
+            matches = glob.glob(os.path.join(pkg_dir, pattern))
+            if matches:
+                set_cdx(item, "SourceFileComment", "sources locally available")
+                print(
+                    f"Found local source for {item.name} {item.version}: "
+                    f"{os.path.basename(matches[0])}"
+                )
+
+        if not needs_download:
             set_cdx(item, "SourceFileDownload", "skip")
     return bom
 
@@ -352,7 +372,7 @@ def main():
     print("== Pass 3: Download missing and unchecked sources ==")
     print()
 
-    bom = pass3_download_sources(bom)
+    bom = pass3_download_sources(bom, args.sources)
     outputbom = write_bom(bom, filename+"-3-download"+extension)
     missing_source_count = len(
         [item for item in bom.components
